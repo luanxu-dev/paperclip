@@ -15,6 +15,22 @@
   <a href="https://discord.gg/m4HZY7xNG3"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
 </p>
 
+## BlockReq Fork PR Ledger
+
+This fork uses PR-only changes on `blockreq/stable-release`.
+
+- Merged PRs into `blockreq/stable-release`:
+  - [#3](https://github.com/luanxu-dev/paperclip/pull/3) `fix(heartbeat): release all issue execution locks for finished run`
+  - [#6](https://github.com/luanxu-dev/paperclip/pull/6) `backport(#735): stop 404 polling loops in sidebar/live-runs`
+  - [#7](https://github.com/luanxu-dev/paperclip/pull/7) `backport(#959-part): agent principal membership gate fix`
+- Open PRs:
+  - [#5](https://github.com/luanxu-dev/paperclip/pull/5) `docs(readme): add top-level fork PR ledger`
+  - [#8](https://github.com/luanxu-dev/paperclip/pull/8) `backport(#3093): heartbeat preflight skip (DRAFT, conflict resolution)`
+- Superseded PRs (closed):
+  - [#1](https://github.com/luanxu-dev/paperclip/pull/1)
+  - [#2](https://github.com/luanxu-dev/paperclip/pull/2)
+  - [#4](https://github.com/luanxu-dev/paperclip/pull/4)
+
 <br/>
 
 <div align="center">
