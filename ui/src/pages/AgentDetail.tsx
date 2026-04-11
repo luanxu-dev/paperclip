@@ -1167,6 +1167,21 @@ function AgentOverview({
   agentId: string;
   agentRouteId: string;
 }) {
+  const runStats = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const run of runs) {
+      const raw = run.createdAt ?? run.startedAt ?? run.finishedAt;
+      if (!raw) continue;
+      const day = new Date(raw).toISOString().slice(0, 10);
+      const key = `${day}|${run.status}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).map(([key, count]) => {
+      const [date, status] = key.split("|");
+      return { date, status, count };
+    });
+  }, [runs]);
+
   return (
     <div className="space-y-8">
       {/* Latest Run */}
@@ -1175,7 +1190,7 @@ function AgentOverview({
       {/* Charts */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <ChartCard title="Run Activity" subtitle="Last 14 days">
-          <RunActivityChart runs={runs} />
+          <RunActivityChart stats={runStats} />
         </ChartCard>
         <ChartCard title="Issues by Priority" subtitle="Last 14 days">
           <PriorityChart issues={assignedIssues} />
@@ -1184,7 +1199,7 @@ function AgentOverview({
           <IssueStatusChart issues={assignedIssues} />
         </ChartCard>
         <ChartCard title="Success Rate" subtitle="Last 14 days">
-          <SuccessRateChart runs={runs} />
+          <SuccessRateChart stats={runStats} />
         </ChartCard>
       </div>
 
