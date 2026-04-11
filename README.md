@@ -15,6 +15,18 @@
   <a href="https://discord.gg/m4HZY7xNG3"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
 </p>
 
+## BlockReq Fork PR Ledger
+
+This fork uses PR-only changes on `blockreq/stable-release`.
+
+- Merged PRs into `blockreq/stable-release`: _none yet_
+- Open PRs:
+  - [#3](https://github.com/luanxu-dev/paperclip/pull/3) `fix(heartbeat): release all issue execution locks for finished run`
+  - [#4](https://github.com/luanxu-dev/paperclip/pull/4) `fix: backport PR1 non-conflict subset to stable release`
+- Superseded PRs (closed):
+  - [#1](https://github.com/luanxu-dev/paperclip/pull/1)
+  - [#2](https://github.com/luanxu-dev/paperclip/pull/2)
+
 <br/>
 
 <div align="center">
