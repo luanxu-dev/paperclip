@@ -89,6 +89,7 @@ const ACTION_LABELS: Record<string, string> = {
   "issue.checked_out": "checked out the issue",
   "issue.released": "released the issue",
   "issue.comment_added": "added a comment",
+  "issue.comment_updated": "updated a comment",
   "issue.feedback_vote_saved": "saved feedback on an AI output",
   "issue.attachment_added": "added an attachment",
   "issue.attachment_removed": "removed an attachment",
@@ -1483,6 +1484,10 @@ export function IssueDetail() {
             <MessageSquare className="h-3.5 w-3.5" />
             Comments
           </TabsTrigger>
+          <TabsTrigger value="timeline" className="gap-1.5">
+            <Repeat className="h-3.5 w-3.5" />
+            Timeline
+          </TabsTrigger>
           <TabsTrigger value="subissues" className="gap-1.5">
             <ListTree className="h-3.5 w-3.5" />
             Sub-issues
@@ -1505,8 +1510,8 @@ export function IssueDetail() {
             feedbackVotes={feedbackVotes}
             feedbackDataSharingPreference={feedbackDataSharingPreference}
             feedbackTermsUrl={FEEDBACK_TERMS_URL}
-            linkedRuns={timelineRuns}
-            timelineEvents={timelineEvents}
+            includeRuns={false}
+            includeTimelineEvents={false}
             companyId={issue.companyId}
             projectId={issue.projectId}
             issueStatus={issue.status}
@@ -1547,6 +1552,39 @@ export function IssueDetail() {
               await uploadAttachment.mutateAsync(file);
             }}
             liveRunSlot={<LiveRunWidget issueId={issueId!} companyId={issue.companyId} />}
+          />
+        </TabsContent>
+
+        <TabsContent value="timeline">
+          <CommentThread
+            comments={timelineComments}
+            queuedComments={[]}
+            feedbackVotes={feedbackVotes}
+            feedbackDataSharingPreference={feedbackDataSharingPreference}
+            feedbackTermsUrl={FEEDBACK_TERMS_URL}
+            linkedRuns={timelineRuns}
+            timelineEvents={timelineEvents}
+            includeRuns
+            includeTimelineEvents
+            showComposer={false}
+            companyId={issue.companyId}
+            projectId={issue.projectId}
+            issueStatus={issue.status}
+            agentMap={agentMap}
+            currentUserId={currentUserId}
+            draftKey={`paperclip:issue-comment-draft:${issue.id}`}
+            mentions={mentionOptions}
+            onVote={async (commentId, vote, options) => {
+              await feedbackVoteMutation.mutateAsync({
+                targetType: "issue_comment",
+                targetId: commentId,
+                vote,
+                reason: options?.reason,
+                allowSharing: options?.allowSharing,
+                sharingPreferenceAtSubmit: feedbackDataSharingPreference,
+              });
+            }}
+            onAdd={async () => {}}
           />
         </TabsContent>
 

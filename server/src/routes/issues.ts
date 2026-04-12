@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Db } from "@paperclipai/db";
 import {
   addIssueCommentSchema,
+  updateIssueCommentSchema,
   createIssueAttachmentMetadataSchema,
   createIssueWorkProductSchema,
   createIssueLabelSchema,
@@ -1204,12 +1205,22 @@ export function issueRoutes(
     }
 
     let comment = null;
+    let commentWasUpdated = false;
     if (commentBody) {
-      comment = await svc.addComment(id, commentBody, {
-        agentId: actor.agentId ?? undefined,
-        userId: actor.actorType === "user" ? actor.actorId : undefined,
-        runId: actor.runId,
-      });
+      if (actor.actorType === "agent" && actor.agentId) {
+        const existingAuthorComment = await svc.findLatestCommentByAuthor(id, { agentId: actor.agentId });
+        if (existingAuthorComment) {
+          comment = await svc.updateComment(id, existingAuthorComment.id, commentBody);
+          commentWasUpdated = true;
+        }
+      }
+      if (!comment) {
+        comment = await svc.addComment(id, commentBody, {
+          agentId: actor.agentId ?? undefined,
+          userId: actor.actorType === "user" ? actor.actorId : undefined,
+          runId: actor.runId,
+        });
+      }
 
       await logActivity(db, {
         companyId: issue.companyId,
@@ -1217,7 +1228,7 @@ export function issueRoutes(
         actorId: actor.actorId,
         agentId: actor.agentId,
         runId: actor.runId,
-        action: "issue.comment_added",
+        action: commentWasUpdated ? "issue.comment_updated" : "issue.comment_added",
         entityType: "issue",
         entityId: issue.id,
         details: {
@@ -1283,7 +1294,7 @@ export function issueRoutes(
         });
       }
 
-      if (commentBody && comment) {
+      if (commentBody && comment && !commentWasUpdated) {
         let mentionedIds: string[] = [];
         try {
           mentionedIds = await svc.findMentionedAgents(issue.companyId, commentBody);
@@ -1518,6 +1529,52 @@ export function issueRoutes(
     res.json(comment);
   });
 
+  router.patch("/issues/:id/comments/:commentId", validate(updateIssueCommentSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const commentId = req.params.commentId as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    if (!(await assertAgentRunCheckoutOwnership(req, res, issue))) return;
+
+    const existingComment = await svc.getComment(commentId);
+    if (!existingComment || existingComment.issueId !== id) {
+      res.status(404).json({ error: "Comment not found" });
+      return;
+    }
+
+    if (req.actor.type === "agent") {
+      if (!req.actor.agentId || existingComment.authorAgentId !== req.actor.agentId) {
+        res.status(403).json({ error: "Only the comment author can edit this comment" });
+        return;
+      }
+    }
+
+    const updatedComment = await svc.updateComment(id, commentId, req.body.body);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "issue.comment_updated",
+      entityType: "issue",
+      entityId: issue.id,
+      details: {
+        commentId: updatedComment.id,
+        bodySnippet: updatedComment.body.slice(0, 120),
+        identifier: issue.identifier,
+        issueTitle: issue.title,
+      },
+    });
+
+    res.json(updatedComment);
+  });
+
   router.get("/issues/:id/feedback-votes", async (req, res) => {
     const id = req.params.id as string;
     const issue = await svc.getById(id);
@@ -1672,11 +1729,22 @@ export function issueRoutes(
       }
     }
 
-    const comment = await svc.addComment(id, req.body.body, {
-      agentId: actor.agentId ?? undefined,
-      userId: actor.actorType === "user" ? actor.actorId : undefined,
-      runId: actor.runId,
-    });
+    let commentWasUpdated = false;
+    let comment = null;
+    if (actor.actorType === "agent" && actor.agentId) {
+      const existingAuthorComment = await svc.findLatestCommentByAuthor(id, { agentId: actor.agentId });
+      if (existingAuthorComment) {
+        comment = await svc.updateComment(id, existingAuthorComment.id, req.body.body);
+        commentWasUpdated = true;
+      }
+    }
+    if (!comment) {
+      comment = await svc.addComment(id, req.body.body, {
+        agentId: actor.agentId ?? undefined,
+        userId: actor.actorType === "user" ? actor.actorId : undefined,
+        runId: actor.runId,
+      });
+    }
 
     if (actor.runId) {
       await heartbeat.reportRunActivity(actor.runId).catch((err) =>
@@ -1689,7 +1757,7 @@ export function issueRoutes(
       actorId: actor.actorId,
       agentId: actor.agentId,
       runId: actor.runId,
-      action: "issue.comment_added",
+      action: commentWasUpdated ? "issue.comment_updated" : "issue.comment_added",
       entityType: "issue",
       entityId: currentIssue.id,
       details: {
@@ -1709,7 +1777,7 @@ export function issueRoutes(
       const actorIsAgent = actor.actorType === "agent";
       const selfComment = actorIsAgent && actor.actorId === assigneeId;
       const skipWake = selfComment || isClosed;
-      if (assigneeId && (reopened || !skipWake)) {
+      if (assigneeId && (reopened || (!skipWake && !commentWasUpdated))) {
         if (reopened) {
           wakeups.set(assigneeId, {
             source: "automation",
@@ -1759,32 +1827,34 @@ export function issueRoutes(
         }
       }
 
-      let mentionedIds: string[] = [];
-      try {
-        mentionedIds = await svc.findMentionedAgents(issue.companyId, req.body.body);
-      } catch (err) {
-        logger.warn({ err, issueId: id }, "failed to resolve @-mentions");
-      }
+      if (!commentWasUpdated) {
+        let mentionedIds: string[] = [];
+        try {
+          mentionedIds = await svc.findMentionedAgents(issue.companyId, req.body.body);
+        } catch (err) {
+          logger.warn({ err, issueId: id }, "failed to resolve @-mentions");
+        }
 
-      for (const mentionedId of mentionedIds) {
-        if (wakeups.has(mentionedId)) continue;
-        if (actorIsAgent && actor.actorId === mentionedId) continue;
-        wakeups.set(mentionedId, {
-          source: "automation",
-          triggerDetail: "system",
-          reason: "issue_comment_mentioned",
-          payload: { issueId: id, commentId: comment.id },
-          requestedByActorType: actor.actorType,
-          requestedByActorId: actor.actorId,
-          contextSnapshot: {
-            issueId: id,
-            taskId: id,
-            commentId: comment.id,
-            wakeCommentId: comment.id,
-            wakeReason: "issue_comment_mentioned",
-            source: "comment.mention",
-          },
-        });
+        for (const mentionedId of mentionedIds) {
+          if (wakeups.has(mentionedId)) continue;
+          if (actorIsAgent && actor.actorId === mentionedId) continue;
+          wakeups.set(mentionedId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "issue_comment_mentioned",
+            payload: { issueId: id, commentId: comment.id },
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: {
+              issueId: id,
+              taskId: id,
+              commentId: comment.id,
+              wakeCommentId: comment.id,
+              wakeReason: "issue_comment_mentioned",
+              source: "comment.mention",
+            },
+          });
+        }
       }
 
       for (const [agentId, wakeup] of wakeups.entries()) {
@@ -1794,7 +1864,7 @@ export function issueRoutes(
       }
     })();
 
-    res.status(201).json(comment);
+    res.status(commentWasUpdated ? 200 : 201).json(comment);
   });
 
   router.post("/issues/:id/feedback-votes", validate(upsertIssueFeedbackVoteSchema), async (req, res) => {
