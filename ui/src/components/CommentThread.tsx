@@ -78,6 +78,9 @@ interface CommentThreadProps {
   mentions?: MentionOption[];
   onInterruptQueued?: (runId: string) => Promise<void>;
   interruptingQueuedRunId?: string | null;
+  includeRuns?: boolean;
+  includeTimelineEvents?: boolean;
+  showComposer?: boolean;
 }
 
 const DRAFT_DEBOUNCE_MS = 800;
@@ -569,6 +572,9 @@ export function CommentThread({
   mentions: providedMentions,
   onInterruptQueued,
   interruptingQueuedRunId = null,
+  includeRuns = true,
+  includeTimelineEvents = true,
+  showComposer = true,
 }: CommentThreadProps) {
   const [body, setBody] = useState("");
   const [reopen, setReopen] = useState(true);
@@ -591,18 +597,22 @@ export function CommentThread({
       createdAtMs: new Date(comment.createdAt).getTime(),
       comment,
     }));
-    const eventItems: TimelineItem[] = timelineEvents.map((event) => ({
-      kind: "event",
-      id: event.id,
-      createdAtMs: new Date(event.createdAt).getTime(),
-      event,
-    }));
-    const runItems: TimelineItem[] = linkedRuns.map((run) => ({
-      kind: "run",
-      id: run.runId,
-      createdAtMs: new Date(runTimestamp(run)).getTime(),
-      run,
-    }));
+    const eventItems: TimelineItem[] = includeTimelineEvents
+      ? timelineEvents.map((event) => ({
+          kind: "event",
+          id: event.id,
+          createdAtMs: new Date(event.createdAt).getTime(),
+          event,
+        }))
+      : [];
+    const runItems: TimelineItem[] = includeRuns
+      ? linkedRuns.map((run) => ({
+          kind: "run",
+          id: run.runId,
+          createdAtMs: new Date(runTimestamp(run)).getTime(),
+          run,
+        }))
+      : [];
     return [...commentItems, ...eventItems, ...runItems].sort((a, b) => {
       if (a.createdAtMs !== b.createdAtMs) return a.createdAtMs - b.createdAtMs;
       if (a.kind === b.kind) return a.id.localeCompare(b.id);
@@ -613,7 +623,7 @@ export function CommentThread({
       } as const;
       return kindOrder[a.kind] - kindOrder[b.kind];
     });
-  }, [comments, timelineEvents, linkedRuns]);
+  }, [comments, timelineEvents, linkedRuns, includeRuns, includeTimelineEvents]);
 
   const feedbackVoteByTargetId = useMemo(() => {
     const map = new Map<string, FeedbackVoteValue>();
@@ -742,9 +752,11 @@ export function CommentThread({
 
   const canSubmit = !submitting && !!body.trim();
 
+  const timelineTitle = includeRuns || includeTimelineEvents ? "Timeline" : "Comments";
+
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-semibold">Timeline ({timeline.length + queuedComments.length})</h3>
+      <h3 className="text-sm font-semibold">{timelineTitle} ({timeline.length + queuedComments.length})</h3>
 
       <TimelineList
         timeline={timeline}
@@ -796,6 +808,7 @@ export function CommentThread({
         </div>
       )}
 
+      {showComposer && (
       <div className="space-y-2">
         <MarkdownEditor
           ref={editorRef}
@@ -880,6 +893,7 @@ export function CommentThread({
           </Button>
         </div>
       </div>
+      )}
 
     </div>
   );

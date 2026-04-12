@@ -108,6 +108,8 @@ export const issuesApi = {
         ...(interrupt === undefined ? {} : { interrupt }),
       },
     ),
+  updateComment: (id: string, commentId: string, body: string) =>
+    api.patch<IssueComment>(`/issues/${id}/comments/${commentId}`, { body }),
   listDocuments: (id: string) => api.get<IssueDocument[]>(`/issues/${id}/documents`),
   getDocument: (id: string, key: string) => api.get<IssueDocument>(`/issues/${id}/documents/${encodeURIComponent(key)}`),
   upsertDocument: (id: string, key: string, data: UpsertIssueDocument) =>

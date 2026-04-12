@@ -1713,6 +1713,28 @@ export function issueService(db: Db) {
           return comment ? redactIssueComment(comment, censorUsernameInLogs) : null;
         })),
 
+    findLatestCommentByAuthor: async (
+      issueId: string,
+      actor: { agentId?: string | null; userId?: string | null },
+    ) => {
+      const { censorUsernameInLogs } = await instanceSettings.getGeneral();
+      const authorCondition =
+        actor.agentId
+          ? eq(issueComments.authorAgentId, actor.agentId)
+          : actor.userId
+            ? eq(issueComments.authorUserId, actor.userId)
+            : null;
+      if (!authorCondition) return null;
+      const comment = await db
+        .select()
+        .from(issueComments)
+        .where(and(eq(issueComments.issueId, issueId), authorCondition))
+        .orderBy(desc(issueComments.createdAt), desc(issueComments.id))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      return comment ? redactIssueComment(comment, censorUsernameInLogs) : null;
+    },
+
     addComment: async (
       issueId: string,
       body: string,
@@ -1749,6 +1771,42 @@ export function issueService(db: Db) {
         .where(eq(issues.id, issueId));
 
       return redactIssueComment(comment, currentUserRedactionOptions.enabled);
+    },
+
+    updateComment: async (
+      issueId: string,
+      commentId: string,
+      body: string,
+    ) => {
+      const issue = await db
+        .select({ id: issues.id })
+        .from(issues)
+        .where(eq(issues.id, issueId))
+        .then((rows) => rows[0] ?? null);
+      if (!issue) throw notFound("Issue not found");
+
+      const currentUserRedactionOptions = {
+        enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
+      };
+      const redactedBody = redactCurrentUserText(body, currentUserRedactionOptions);
+
+      const [updatedComment] = await db
+        .update(issueComments)
+        .set({
+          body: redactedBody,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(issueComments.id, commentId), eq(issueComments.issueId, issueId)))
+        .returning();
+
+      if (!updatedComment) throw notFound("Comment not found");
+
+      await db
+        .update(issues)
+        .set({ updatedAt: new Date() })
+        .where(eq(issues.id, issueId));
+
+      return redactIssueComment(updatedComment, currentUserRedactionOptions.enabled);
     },
 
     createAttachment: async (input: {
