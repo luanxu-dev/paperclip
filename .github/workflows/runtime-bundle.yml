@@ -1,0 +1,84 @@
+name: Runtime Bundle
+
+on:
+  push:
+    branches:
+      - blockreq/stable-release
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or commit SHA to bundle
+        required: false
+        default: blockreq/stable-release
+        type: string
+
+concurrency:
+  group: runtime-bundle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          fetch-depth: 1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Prepare server static UI
+        run: pnpm --filter @paperclipai/server run prepare:ui-dist
+
+      - name: Build runtime bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA:0:12}"
+          stage="$RUNNER_TEMP/paperclip-runtime"
+          bundle="$RUNNER_TEMP/paperclip-runtime-${short_sha}.tar.gz"
+
+          rm -rf "$stage"
+          mkdir -p "$stage"
+
+          rsync -a --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude '.turbo' \
+            --exclude 'coverage' \
+            --exclude 'tests/**/test-results' \
+            ./ "$stage"/
+
+          [[ -f "$stage/server/dist/index.js" ]] || { echo "missing server/dist/index.js"; exit 1; }
+          [[ -d "$stage/server/ui-dist" ]] || { echo "missing server/ui-dist"; exit 1; }
+
+          tar -C "$RUNNER_TEMP" -czf "$bundle" paperclip-runtime
+          ls -lh "$bundle"
+
+      - name: Upload runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: paperclip-runtime-linux-x64
+          path: ${{ runner.temp }}/paperclip-runtime-*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
