@@ -4,8 +4,10 @@ on:
   push:
     branches:
       - "master"
+      - "blockreq/stable-release"
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
